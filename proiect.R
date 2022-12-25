@@ -15,32 +15,35 @@ for(i in PackageNames){
 
 # ----------- CURATARE DATE -------------------------
 
-date <- read.csv(paste0(directory, "house_offers.csv"))
-
-drop <- c("id","location", "location_area", "type", "partitioning", "real_estate_type", "height_regime", "garages_count", "seller_type")
-date = date[,!(names(date) %in% drop)]
-
-date$balconies_count[is.na(date$balconies_count)] = 0
-date$parking_lots_count[is.na(date$parking_lots_count)] = 0
-sapply(date, function(x) sum(is.na(x)))
-date = date %>% drop_na()
-
-date <- date[date$bathrooms_count < 5, ]
-date <- date[date$kitchens_count < 5, ]
-date <- date[date$parking_lots_count < 5, ]
-date <- date[date$balconies_count < 5, ]
-date <- date[date$price < 500000, ]
-
-date$construction_year[date$construction_year == 'Parter'] <- 0
-date$comfort[date$comfort == 'lux'] <- 4
-
-date$construction_year <- as.integer(date$construction_year)
-date$comfort <- as.integer(date$comfort)
-
-stargazer(date, type = "text")
-
-write.csv(date, "C:/Users/nicus/OneDrive - Academia de Studii Economice din Bucuresti/Documents/Facultate/Econometrie/Proiect-Econometrie/house_offers_f.csv",
-          row.names = FALSE)
+# date <- read.csv(paste0(directory, "house_offers.csv"))
+# 
+# drop <- c("id","location", "location_area", "type", "partitioning", "real_estate_type", "height_regime", "garages_count", "seller_type")
+# date = date[,!(names(date) %in% drop)]
+# 
+# date$balconies_count[is.na(date$balconies_count)] = 0
+# date$parking_lots_count[is.na(date$parking_lots_count)] = 0
+# sapply(date, function(x) sum(is.na(x)))
+# date = date %>% drop_na()
+# 
+# date <- date[date$bathrooms_count < 5, ]
+# date <- date[date$kitchens_count < 5, ]
+# date <- date[date$parking_lots_count < 5, ]
+# date <- date[date$balconies_count < 5, ]
+# date <- date[date$useful_surface > 30, ]
+# date <- date[date$built_surface > 30, ]
+# date <- date[date$price < 200000, ]
+# 
+# date$level[date$level == 'Parter'] <- 0
+# date$comfort[date$comfort == 'lux'] <- 4
+# 
+# date$construction_year <- as.integer(date$construction_year)
+# date$level <- as.integer(date$level)
+# date$comfort <- as.integer(date$comfort)
+# 
+# stargazer(date, type = "text")
+# 
+# write.csv(date, "C:/Users/nicus/OneDrive - Academia de Studii Economice din Bucuresti/Documents/Facultate/Econometrie/Proiect-Econometrie/house_offers_f.csv",
+#           row.names = FALSE)
 
 
 # ------------------ Regresie Simpla --------------------------
@@ -136,7 +139,7 @@ ggplot(date, aes(x = useful_surface)) +
   geom_point(aes(y = uhat, col = 'Price uhat')) +
   xlab('Useful Surface')
 
-bptest(wols5) #p-value = 1 > 0.01
+bptest(wols5) #p-value = 1 > 0.01, dar dar din grafica pare tot hetero
 white_test(wols5)
 
 
@@ -235,3 +238,196 @@ preds <- predict(model1, newdata = pred_date, interval="confidence", level=0.90)
 residuals = residuals(model1)
 rmse <- sqrt(mean(residuals^2)) #rmse = 35990
 mae <- mean(abs(residuals)) #mae = 53695
+
+#------------------- Regresia multipla -----------------------------
+#Reluam setup
+rm(list = ls()) 
+directory <- "C:/Users/nicus/OneDrive - Academia de Studii Economice din Bucuresti/Documents/Facultate/Econometrie/Proiect-Econometrie/"
+
+#Install pachete
+PackageNames <- c("tidyverse", "stargazer", "magrittr", "lmtest", "sandwich", 
+                  "olsrr", "moments","whitestrap", "car", "stats", "tsoutliers", "olsrr", "Metrics")
+library("scales")
+library("tseries")
+for(i in PackageNames){
+  if(!require(i, character.only = T)){
+    install.packages(i, dependencies = T)
+    require(i, character.only = T)
+  }
+}
+
+
+date <- read.csv(paste0(directory, "house_offers_f.csv"))
+
+model_multiplu <- lm(price ~ comfort + rooms_count + useful_surface + bathrooms_count + 
+                       + balconies_count + level, date)
+
+vif(model_multiplu)
+summary(model_multiplu)
+#preluam preturile prezise si erorile/reziduurile
+date %<>% mutate(pricehat = fitted(model_multiplu),
+                  uhat = residuals(model_multiplu))
+#veridicam cateva valori
+date %>% 
+  select(price, pricehat, uhat) %>% 
+  head(10)
+
+date %>% 
+  select(price, pricehat, uhat) %>%
+  stargazer(type = "text")
+
+# ------------ Facem modificari in model stergand variabile
+
+model_multiplu <- lm(price ~ comfort + rooms_count + useful_surface, date)
+summary(model_multiplu)
+
+vif(model_multiplu)
+
+date %<>% mutate(pricehat = fitted(model_multiplu),
+                 uhat = residuals(model_multiplu))
+date %>% 
+  select(price, pricehat, uhat) %>% 
+  head(10)
+
+date %>% 
+  select(price, pricehat, uhat) %>%
+  stargazer(type = "text")
+
+cor.test(date$comfort, date$uhat)
+cor.test(date$useful_surface, date$uhat)
+cor.test(date$rooms_count, date$uhat)
+
+# --- testam homoscedasticitatea modelului
+
+bptest(model_multiplu)
+white_test(model_multiplu)
+#din teste rezulta ca se respinge ipoteza nula deci intalnim heteroscedasticitate care trebuie corectata
+
+date %<>% mutate(lprice = log(price),
+                 lcomfort = log(comfort),
+                 luseful_surface = log(useful_surface),
+                 lrooms_count = log(rooms_count))
+
+model_multiplu <- lm(lprice ~ lcomfort + luseful_surface + rooms_count, date) # MODEL BUN ---------------------------------->
+summary(model_multiplu)
+bptest(model_multiplu)
+white_test(model_multiplu) #p-value = 0.23 > 0.05 => reziduuri homoschedastice
+
+date %<>% mutate(pricehat = fitted(model_multiplu),
+                 uhat = residuals(model_multiplu))
+date %>% 
+  select(price, pricehat, uhat) %>% 
+  head(10)
+
+date %>% 
+  select(price, pricehat, uhat) %>%
+  stargazer(type = "text")
+
+# Graph of residuals against fitted values
+date %<>% mutate(yhat = fitted(model_multiplu))
+ggplot(data = date, mapping = aes(x = yhat, y = uhat)) + 
+  theme_bw() +
+  geom_point() +
+  geom_hline(yintercept = 0, col = 'red') + 
+  labs(y = 'Reziduuri', x = 'Valori estimate')
+
+# -------- testam autocorelarea ---------------
+
+# Testul Durbin-Watson
+dw_test <- durbinWatsonTest(model_multiplu)
+
+dw_test
+
+# Deoarece avem o valoare a D-W Statistic de 1.87 ( 0 < 1.97 < 4) si un p-value de 0.3 > 0.05 rezulta ca
+# modelul nu are autocorelatii
+
+#----------- testam normalitatea ----------------
+
+# Aplicam cei 5 pasi in testarea normalitatii reziduurilor 
+# 1. Graficul Residuals vs Fitted
+# 2. Graficul Q-Q plot
+# 3. Histograma reziduurilor
+# 4. Boxplotul reziduurilor
+# 5. Testele de normalitate (Shapiro-Wilk si Jarque Bera)
+
+# 1. Graficul Residuals vs Fitted
+plot(model_multiplu) # primul grafic
+
+# Pasul 2 - Graficul 'Q-Q plot'
+plot(model_multiplu) # al doilea grafic
+
+# Pasul 3 - Histograma reziduurilor
+ggplot(data = date) +
+  theme_bw() +
+  geom_histogram(mapping = aes(x = uhat), col = 'grey')+
+  xlab('Reziduuri') + 
+  ylab('Count') +
+  ggtitle('Histograma reziduurilor') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+skewness(date$uhat) #0.23 > 0 -> histograma centrata in dreapta
+kurtosis(date$uhat) # 2.75 -> histograma platicurtica (ascutita)
+
+# Pasul 4 - Graficele de tip Boxplot
+ggplot(date, aes(x=uhat, y=price)) + 
+  geom_boxplot() +
+  theme_bw()+
+  xlab('Reziduuri') + 
+  ylab('Pret') +
+  ggtitle('Boxplot reziduuri') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Pasul 5 - Testarea normalitatii cu ajutorul testelor specifice acestei ipoteze
+# Testul Jarque-Bera pentru normalitate
+# H0: distributie normala, Ha: distributie nenormala
+jarque.bera.test(date$uhat)
+
+
+# Distanta Cook este folosita pentru a identifica punctele de date influente. 
+# Ulterior, vom elimina aceste puncte
+# si vom rerula modelul si retesta ipoteza de normalitate
+ols_plot_cooksd_bar(model_multiplu) 
+ols_plot_cooksd_chart(model_multiplu)
+
+date <- date[-c(4230, 2428, 610, 5036, 118, 716, 2733, 2892, 2326), ]
+
+model_multiplu <- lm(lprice ~ lcomfort + luseful_surface + rooms_count, date)
+summary(model_multiplu)
+
+date %<>% mutate(uhat = resid(model_multiplu)) # extragem reziduurile din model
+
+#Retestam prin Jarque-Bera
+jarque.bera.test(date$uhat)
+#Testul respinge ipoteza de normalitate
+
+ols_plot_cooksd_bar(model_multiplu) 
+ols_plot_cooksd_chart(model_multiplu)
+
+date <- date[-c(23, 354, 674, 1981, 3897, 4853, 4999, 3830, 2353, 2549, 2364, 940, 680, 320, 191, 26, 408, 1701, 4275), ]
+model_multiplu <- lm(lprice ~ lcomfort + luseful_surface + rooms_count, date)
+summary(model_multiplu)
+date %<>% mutate(uhat = resid(model)) # extragem reziduurile din model
+
+
+#Retestam prin Jarque-Bera
+jarque.bera.test(date_fil$uhat)
+#Testul respinge ipoteza de normalitate
+
+
+#incarcam setul de date pentru predictii
+pred_date <- read.csv(paste0(directory, "pred_multiple.csv"))
+pred_date = pred_date %>% drop_na()
+pred_date %<>% mutate(lcomfort = log(comfort),
+                      luseful_surface = log(useful_surface))
+#facem predictii pe interval de incredere
+preds <- predict(model_multiplu, newdata = pred_date, interval="confidence", level=0.90)
+
+#calculam indicatorii rmse si mae
+residuals = residuals(model_multiplu)
+rmse <- sqrt(mean(residuals^2)) #rmse = 0.29
+mae <- mean(abs(residuals)) #mae = 0.24
+
+#hist(date$rooms_count)
+#hist(date$comfort)
+#plot(date$price)
+#plot(date$built_surface)
